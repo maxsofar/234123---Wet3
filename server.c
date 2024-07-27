@@ -36,8 +36,7 @@ void *worker_thread(void *arg) {
     return NULL;
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     int listenfd, connfd, port, clientlen;
     int threads, queue_size;
     char *schedalg;
@@ -59,19 +58,9 @@ int main(int argc, char *argv[])
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
 
-        // Enqueue the connection descriptor
-        enqueue(&request_queue, connfd);
+        // Enqueue the connection descriptor with the scheduling algorithm
+        enqueue(&request_queue, connfd, schedalg);
     }
-
-    // Cleanup
-    for (int i = 0; i < threads; i++) {
-        pthread_join(thread_pool[i], NULL);
-    }
-    free(thread_pool);
-    destroy(&request_queue);
-
-    return 0;
-
 }
 
 

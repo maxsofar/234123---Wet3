@@ -20,7 +20,7 @@ typedef struct {
 
 void init(request_queue_t *queue, int capacity);
 void destroy(request_queue_t *queue);
-void enqueue(request_queue_t *queue, int request);
+void enqueue(request_queue_t *queue, int request, const char *schedalg);
 int dequeue(request_queue_t *queue);
 int dequeue_last(request_queue_t *queue);
 
