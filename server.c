@@ -3,14 +3,12 @@
 #include "request_queue.h"
 
 //
-// server.c: A very, very simple web server
+// server.c: Multi-threaded web server
 //
 // To run:
-//  ./server <portnum (above 2000)>
+//  ./server <port> <threads> <queue_size> <schedalg>
 //
-// Repeatedly handles HTTP requests sent to this port number.
-// Most of the work is done within routines written in request.c
-//
+
 
 void getargs(int *port, int *threads, int *queue_size, char **schedalg, int argc, char *argv[])
 {
