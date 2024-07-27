@@ -21,7 +21,7 @@ typedef struct {
 
 void init(request_queue_t *queue, int capacity);
 void destroy(request_queue_t *queue);
-void enqueue(request_queue_t *queue, int request, const char *schedalg);
+int enqueue(request_queue_t *queue, int connfd, char *schedalg);
 int dequeue(request_queue_t *queue, struct timeval *arrival_time);
 int dequeue_last(request_queue_t *queue);
 

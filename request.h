@@ -8,5 +8,6 @@ typedef struct {
 } thread_stats_t;
 
 void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thread_stats_t *t_stats);
+void increaseDynamicReq(thread_stats_t *t_stats);
 
 #endif

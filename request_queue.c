@@ -27,20 +27,19 @@ void destroy(request_queue_t *queue) {
     pthread_cond_destroy(&queue->not_full);
     pthread_cond_destroy(&queue->not_empty);
 }
-
-void enqueue(request_queue_t *queue, int request, const char *schedalg) {
+int enqueue(request_queue_t *queue, int connfd, char *schedalg) {
     pthread_mutex_lock(&queue->mutex);
-
     if (queue->size == queue->capacity) {
-        // Handle scheduling algorithms...
+        pthread_mutex_unlock(&queue->mutex);
+        return -1; // Queue is full
     }
-
     queue->rear = (queue->rear + 1) % queue->capacity;
-    queue->buffer[queue->rear] = request;
+    queue->buffer[queue->rear] = connfd;
     gettimeofday(&queue->arrival_times[queue->rear], NULL);
     queue->size++;
     pthread_cond_signal(&queue->not_empty);
     pthread_mutex_unlock(&queue->mutex);
+    return 0; // Successfully enqueued
 }
 
 int dequeue(request_queue_t *queue, struct timeval *arrival_time) {

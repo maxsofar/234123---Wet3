@@ -29,17 +29,22 @@ request_queue_t request_queue;
 void *worker_thread(void *arg) {
     thread_stats_t *t_stats = (thread_stats_t *)arg;
     while (1) {
-        struct timeval arrival_time, dispatch_time;
-        gettimeofday(&dispatch_time, NULL);
+        struct timeval arrival_time, dispatch_time, current_time;
+        gettimeofday(&arrival_time, NULL);
         int connfd = dequeue(&request_queue, &arrival_time);
 
         // Calculate dispatch interval
-        timersub(&dispatch_time, &arrival_time, &dispatch_time);
+        gettimeofday(&current_time, NULL);
+        timersub(&current_time, &arrival_time, &dispatch_time);
 
         // Update thread statistics
         t_stats->total_req++;
         // Determine if the request is static or dynamic and update accordingly
         // ...
+
+        // Format dispatch time as a string
+        char dispatch_time_str[64];
+        snprintf(dispatch_time_str, sizeof(dispatch_time_str), "%ld.%06ld", dispatch_time.tv_sec, dispatch_time.tv_usec);
 
         requestHandle(connfd, arrival_time, dispatch_time, t_stats);
         Close(connfd);
@@ -75,7 +80,10 @@ int main(int argc, char *argv[]) {
         connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
 
         // Enqueue the connection descriptor with the scheduling algorithm
-        enqueue(&request_queue, connfd, schedalg);
+        if (enqueue(&request_queue, connfd, schedalg) == -1) {
+            // Queue is full, close the connection
+            Close(connfd);
+        }
     }
 }
 
