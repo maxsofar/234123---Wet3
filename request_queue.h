@@ -9,6 +9,7 @@
 
 typedef struct {
     int *buffer;
+    struct timeval *arrival_times;
     int capacity;
     int size;
     int front;
@@ -21,7 +22,7 @@ typedef struct {
 void init(request_queue_t *queue, int capacity);
 void destroy(request_queue_t *queue);
 void enqueue(request_queue_t *queue, int request, const char *schedalg);
-int dequeue(request_queue_t *queue);
+int dequeue(request_queue_t *queue, struct timeval *arrival_time);
 int dequeue_last(request_queue_t *queue);
 
 #endif // REQUEST_QUEUE_H

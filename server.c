@@ -12,7 +12,6 @@
 // Most of the work is done within routines written in request.c
 //
 
-// HW3: Parse the new arguments too
 void getargs(int *port, int *threads, int *queue_size, char **schedalg, int argc, char *argv[])
 {
     if (argc < 5) {
@@ -28,9 +27,21 @@ void getargs(int *port, int *threads, int *queue_size, char **schedalg, int argc
 request_queue_t request_queue;
 
 void *worker_thread(void *arg) {
+    thread_stats_t *t_stats = (thread_stats_t *)arg;
     while (1) {
-        int connfd = dequeue(&request_queue);
-        requestHandle(connfd);
+        struct timeval arrival_time, dispatch_time;
+        gettimeofday(&dispatch_time, NULL);
+        int connfd = dequeue(&request_queue, &arrival_time);
+
+        // Calculate dispatch interval
+        timersub(&dispatch_time, &arrival_time, &dispatch_time);
+
+        // Update thread statistics
+        t_stats->total_req++;
+        // Determine if the request is static or dynamic and update accordingly
+        // ...
+
+        requestHandle(connfd, arrival_time, dispatch_time, t_stats);
         Close(connfd);
     }
     return NULL;
@@ -49,8 +60,13 @@ int main(int argc, char *argv[]) {
 
     // Create worker threads
     pthread_t *thread_pool = malloc(threads * sizeof(pthread_t));
+    thread_stats_t *thread_stats = malloc(threads * sizeof(thread_stats_t));
     for (int i = 0; i < threads; i++) {
-        pthread_create(&thread_pool[i], NULL, worker_thread, NULL);
+        thread_stats[i].id = i;
+        thread_stats[i].total_req = 0;
+        thread_stats[i].stat_req = 0;
+        thread_stats[i].dynm_req = 0;
+        pthread_create(&thread_pool[i], NULL, worker_thread, &thread_stats[i]);
     }
 
     listenfd = Open_listenfd(port);

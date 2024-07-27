@@ -155,7 +155,7 @@ void requestServeStatic(int fd, char *filename, int filesize)
 }
 
 // handle a request
-void requestHandle(int fd) {
+void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thread_stats_t *t_stats) {
     int is_static;
     struct stat sbuf;
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
@@ -195,7 +195,7 @@ void requestHandle(int fd) {
             }
             requestServeDynamic(fd, filename, cgiargs);
         }
-        requestHandle(last_fd);
+        requestHandle(last_fd, arrival, dispatch, t_stats);
         Close(last_fd);
     } else {
         if (is_static) {
@@ -212,5 +212,15 @@ void requestHandle(int fd) {
             requestServeDynamic(fd, filename, cgiargs);
         }
     }
-}
 
+    // Add statistics to the response headers
+    sprintf(buf, "Stat-Req-Arrival:: %lu.%06lu\r\n", arrival.tv_sec, arrival.tv_usec);
+    sprintf(buf, "%sStat-Req-Dispatch:: %lu.%06lu\r\n", buf, dispatch.tv_sec, dispatch.tv_usec);
+    sprintf(buf, "%sStat-Thread-Id:: %d\r\n", buf, t_stats->id);
+    sprintf(buf, "%sStat-Thread-Count:: %d\r\n", buf, t_stats->total_req);
+    sprintf(buf, "%sStat-Thread-Static:: %d\r\n", buf, t_stats->stat_req);
+    sprintf(buf, "%sStat-Thread-Dynamic:: %d\r\n", buf, t_stats->dynm_req);
+
+    // Send the response with the headers
+    Rio_writen(fd, buf, strlen(buf));
+}
