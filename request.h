@@ -9,5 +9,8 @@ typedef struct {
 
 void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thread_stats_t *t_stats);
 void increaseDynamicReq(thread_stats_t *t_stats);
+void increaseStaticReq(thread_stats_t *t_stats);
+int requestParseURI(char *uri, char *filename, char *cgiargs);
+
 
 #endif

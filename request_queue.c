@@ -20,13 +20,6 @@ void init(request_queue_t *queue, int capacity) {
     pthread_cond_init(&queue->not_empty, NULL);
 }
 
-void destroy(request_queue_t *queue) {
-    free(queue->buffer);
-    free(queue->arrival_times);
-    pthread_mutex_destroy(&queue->mutex);
-    pthread_cond_destroy(&queue->not_full);
-    pthread_cond_destroy(&queue->not_empty);
-}
 int enqueue(request_queue_t *queue, int connfd, char *schedalg) {
     pthread_mutex_lock(&queue->mutex);
     if (queue->size == queue->capacity) {
@@ -56,16 +49,4 @@ int dequeue(request_queue_t *queue, struct timeval *arrival_time) {
     return request;
 }
 
-int dequeue_last(request_queue_t *queue) {
-    pthread_mutex_lock(&queue->mutex);
-    while (queue->size == 0) {
-        pthread_cond_wait(&queue->not_empty, &queue->mutex);
-    }
-    int request = queue->buffer[queue->rear];
-    queue->rear = (queue->rear - 1 + queue->capacity) % queue->capacity;
-    queue->size--;
-    pthread_cond_signal(&queue->not_full);
-    pthread_mutex_unlock(&queue->mutex);
-    return request;
-}
 

@@ -9,7 +9,6 @@
 //  ./server <port> <threads> <queue_size> <schedalg>
 //
 
-
 void getargs(int *port, int *threads, int *queue_size, char **schedalg, int argc, char *argv[])
 {
     if (argc < 5) {
@@ -37,8 +36,7 @@ void *worker_thread(void *arg) {
 
         // Update thread statistics
         t_stats->total_req++;
-        // Determine if the request is static or dynamic and update accordingly
-        // ...
+
 
         // Format dispatch time as a string
         char dispatch_time_str[64];
@@ -58,10 +56,8 @@ int main(int argc, char *argv[]) {
 
     getargs(&port, &threads, &queue_size, &schedalg, argc, argv);
 
-    // Initialize request queue
     init(&request_queue, queue_size);
 
-    // Create worker threads
     pthread_t *thread_pool = malloc(threads * sizeof(pthread_t));
     thread_stats_t *thread_stats = malloc(threads * sizeof(thread_stats_t));
     for (int i = 0; i < threads; i++) {
@@ -77,9 +73,7 @@ int main(int argc, char *argv[]) {
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
 
-        // Enqueue the connection descriptor with the scheduling algorithm
         if (enqueue(&request_queue, connfd, schedalg) == -1) {
-            // Queue is full, close the connection
             Close(connfd);
         }
     }

@@ -89,9 +89,14 @@ int requestParseURI(char *uri, char *filename, char *cgiargs)
     }
 }
 
+void increaseStaticReq(thread_stats_t *t_stats) {
+    t_stats->stat_req++;
+}
+
 void increaseDynamicReq(thread_stats_t *t_stats) {
     t_stats->dynm_req++;
 }
+
 
 //
 // Fills in the filetype given the filename
@@ -197,13 +202,15 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
             requestError(fd, filename, "403", "Forbidden", "OS-HW3 Server could not read this file");
             return;
         }
+        increaseStaticReq(t_stats);
         requestServeStatic(fd, filename, sbuf.st_size, arrival, dispatch, t_stats);
     } else {
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {
             requestError(fd, filename, "403", "Forbidden", "OS-HW3 Server could not run this CGI program");
             return;
         }
-        increaseDynamicReq(t_stats); // Increment dynamic request count
+        increaseDynamicReq(t_stats);
         requestServeDynamic(fd, filename, cgiargs, arrival, dispatch, t_stats);
     }
+
 }
