@@ -14,16 +14,11 @@ typedef struct {
     int size;
     int front;
     int rear;
-    pthread_mutex_t mutex;
-    pthread_cond_t not_full;
-    pthread_cond_t not_empty;
 } request_queue_t;
 
 void init(request_queue_t *queue, int capacity);
-void destroy(request_queue_t *queue);
 int enqueue(request_queue_t *queue, int connfd, char *schedalg);
 int dequeue(request_queue_t *queue, struct timeval *arrival_time);
-int dequeue_last(request_queue_t *queue);
 
 #endif // REQUEST_QUEUE_H
 
