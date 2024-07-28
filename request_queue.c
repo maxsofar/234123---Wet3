@@ -29,8 +29,8 @@ int enqueue(request_queue_t *queue, int connfd, char *schedalg) {
 }
 
 int dequeue(request_queue_t *queue, struct timeval *arrival_time) {
-    while (queue->size == 0) {
-        // Busy wait
+    if (queue->size == 0) {
+        return -1; // Queue is empty
     }
     int request = queue->buffer[queue->front];
     *arrival_time = queue->arrival_times[queue->front];
