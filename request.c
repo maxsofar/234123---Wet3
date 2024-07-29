@@ -241,4 +241,30 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
         increaseDynamicReq(t_stats);
         requestServeDynamic(fd, filename, cgiargs, arrival, dispatch, t_stats);
     }
+
+    // Check for .skip suffix
+    if (strstr(filename, ".skip") != NULL) {
+        struct timeval skip_arrival_time;
+        int skip_fd;
+
+        pthread_mutex_lock(&request_queue.mutex);
+        if (request_queue.size > 0) {
+            skip_fd = request_queue.buffer[request_queue.rear];
+            skip_arrival_time = request_queue.arrival_times[request_queue.rear];
+            request_queue.rear = (request_queue.rear - 1 + request_queue.capacity) % request_queue.capacity;
+            request_queue.size--;
+        } else {
+            skip_fd = -1;
+        }
+        pthread_mutex_unlock(&request_queue.mutex);
+
+        if (skip_fd != -1) {
+            struct timeval skip_dispatch_time, current_time;
+            gettimeofday(&current_time, NULL);
+            timersub(&current_time, &skip_arrival_time, &skip_dispatch_time);
+
+            requestHandle(skip_fd, skip_arrival_time, skip_dispatch_time, t_stats);
+            Close(skip_fd);
+        }
+    }
 }

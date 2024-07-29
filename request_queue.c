@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include "segel.h"
 
 void init(request_queue_t *queue, int capacity) {
     queue->buffer = (int *)malloc(capacity * sizeof(int));
@@ -15,28 +14,31 @@ void init(request_queue_t *queue, int capacity) {
     queue->size = 0;
     queue->front = 0;
     queue->rear = -1;
+    pthread_mutex_init(&queue->mutex, NULL);
+    pthread_cond_init(&queue->not_full, NULL);
+    pthread_cond_init(&queue->not_empty, NULL);
+    pthread_cond_init(&queue->empty, NULL);
 }
 
-int enqueue(request_queue_t *queue, int connfd, char *schedalg) {
-    if (queue->size == queue->capacity) {
-        return -1; // Queue is full
-    }
+void enqueue(request_queue_t *queue, int connfd, struct timeval arrival_time) {
     queue->rear = (queue->rear + 1) % queue->capacity;
     queue->buffer[queue->rear] = connfd;
-    gettimeofday(&queue->arrival_times[queue->rear], NULL);
+    queue->arrival_times[queue->rear] = arrival_time;
     queue->size++;
-    return 0; // Successfully enqueued
+    pthread_cond_signal(&queue->not_empty);
+
 }
 
 int dequeue(request_queue_t *queue, struct timeval *arrival_time) {
-    if (queue->size == 0) {
-        return -1; // Queue is empty
-    }
     int request = queue->buffer[queue->front];
     *arrival_time = queue->arrival_times[queue->front];
     queue->front = (queue->front + 1) % queue->capacity;
     queue->size--;
+
+    pthread_cond_signal(&queue->not_full);
+
     return request;
 }
+
 
 
