@@ -17,7 +17,6 @@ typedef enum {
     SCHED_RANDOM
 } schedalg_t;
 
-// format: ./server <port> <threads> <queue_size> <schedalg>
 schedalg_t parse_schedalg(char *schedalg) {
     if (strcmp(schedalg, "block") == 0) return SCHED_BLOCK;
     if (strcmp(schedalg, "dt") == 0) return SCHED_DT;
@@ -40,6 +39,7 @@ void getargs(int *port, int *threads, int *queue_size, char **schedalg, int argc
 }
 
 request_queue_t request_queue;
+pthread_mutex_t active_threads_mutex;
 
 int active_threads = 0;
 
@@ -53,8 +53,11 @@ void *worker_thread(void *arg) {
             pthread_cond_wait(&request_queue.not_empty, &request_queue.mutex);
         }
         int connfd = dequeue(&request_queue, &arrival_time);
-        active_threads++;
         pthread_mutex_unlock(&request_queue.mutex);
+
+        pthread_mutex_lock(&active_threads_mutex);
+        active_threads++;
+        pthread_mutex_unlock(&active_threads_mutex);
 
         // Calculate dispatch interval
         gettimeofday(&current_time, NULL);
@@ -66,12 +69,16 @@ void *worker_thread(void *arg) {
         requestHandle(connfd, arrival_time, dispatch_time, t_stats);
         Close(connfd);
 
-        pthread_mutex_lock(&request_queue.mutex);
+
+        pthread_mutex_lock(&active_threads_mutex);
         active_threads--;
+        pthread_mutex_lock(&request_queue.mutex);
         if (request_queue.size == 0 && active_threads == 0) {
             pthread_cond_signal(&request_queue.empty);
         }
         pthread_mutex_unlock(&request_queue.mutex);
+        pthread_mutex_unlock(&active_threads_mutex);
+
     }
     return NULL;
 }
@@ -81,7 +88,7 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in clientaddr;
     char *schedalg_str;
     schedalg_t schedalg;
-
+    pthread_mutex_init(&active_threads_mutex, NULL);
 
     getargs(&port, &threads, &queue_size, &schedalg_str, argc, argv);
     schedalg = parse_schedalg(schedalg_str);
@@ -103,10 +110,10 @@ int main(int argc, char *argv[]) {
 
 
     while (1) {
+        struct timeval arrival_time;
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *) &clientaddr, (socklen_t *) &clientlen);
 
-        struct timeval arrival_time;
         gettimeofday(&arrival_time, NULL);
 
         if (schedalg == SCHED_BF) {
@@ -125,10 +132,11 @@ int main(int argc, char *argv[]) {
             pthread_mutex_unlock(&request_queue.mutex);
 
         } else if (schedalg == SCHED_DT) {
+            pthread_mutex_lock(&request_queue.mutex);
             if (request_queue.size == request_queue.capacity) {
                 Close(connfd);
+                pthread_mutex_unlock(&request_queue.mutex);
             } else {
-                pthread_mutex_lock(&request_queue.mutex);
                 enqueue(&request_queue, connfd, arrival_time);
                 pthread_mutex_unlock(&request_queue.mutex);
             }
