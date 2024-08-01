@@ -14,7 +14,7 @@ typedef enum {
     SCHED_DT,
     SCHED_DH,
     SCHED_BF,
-    SCHED_RANDOM
+    SCHED_RD
 } schedalg_t;
 
 schedalg_t parse_schedalg(char *schedalg) {
@@ -22,7 +22,7 @@ schedalg_t parse_schedalg(char *schedalg) {
     if (strcmp(schedalg, "dt") == 0) return SCHED_DT;
     if (strcmp(schedalg, "dh") == 0) return SCHED_DH;
     if (strcmp(schedalg, "bf") == 0) return SCHED_BF;
-    if (strcmp(schedalg, "random") == 0) return SCHED_RANDOM;
+    if (strcmp(schedalg, "random") == 0) return SCHED_RD;
     fprintf(stderr, "Unknown scheduling algorithm: %s\n", schedalg);
     exit(1);
 }
@@ -107,42 +107,32 @@ int main(int argc, char *argv[]) {
 
         gettimeofday(&arrival_time, NULL);
 
-        if (schedalg == SCHED_BF) {
-            pthread_mutex_lock(&request_queue.mutex);
-            while (request_queue.size > 0) {
-                pthread_cond_wait(&request_queue.empty, &request_queue.mutex);
-            }
-            pthread_mutex_unlock(&request_queue.mutex);
-            Close(connfd);
-        } else if (schedalg == SCHED_BLOCK) {
-            pthread_mutex_lock(&request_queue.mutex);
-            while (request_queue.size == request_queue.capacity) {
-                pthread_cond_wait(&request_queue.not_full, &request_queue.mutex);
-            }
-            enqueue(&request_queue, connfd, arrival_time);
-            pthread_mutex_unlock(&request_queue.mutex);
-
-        } else if (schedalg == SCHED_DT) {
-            pthread_mutex_lock(&request_queue.mutex);
-            if (request_queue.size == request_queue.capacity) {
+        pthread_mutex_lock(&request_queue.mutex);
+        if (request_queue.size == request_queue.capacity) {
+            if (schedalg == SCHED_BF) {
+                while (request_queue.size > 0) {
+                    pthread_cond_wait(&request_queue.empty, &request_queue.mutex);
+                }
+                pthread_mutex_unlock(&request_queue.mutex);
                 Close(connfd);
-                pthread_mutex_unlock(&request_queue.mutex);
-            } else {
-                enqueue(&request_queue, connfd, arrival_time);
-                pthread_mutex_unlock(&request_queue.mutex);
-            }
+                continue;
+            } else if (schedalg == SCHED_BLOCK) {
+                while (request_queue.size == request_queue.capacity) {
+                    pthread_cond_wait(&request_queue.not_full, &request_queue.mutex);
+                }
 
-        } else if (schedalg == SCHED_DH) {
-            pthread_mutex_lock(&request_queue.mutex);
-            if (request_queue.size == request_queue.capacity) {
-                dequeue(&request_queue, NULL);
-            }
-            enqueue(&request_queue, connfd, arrival_time);
-            pthread_mutex_unlock(&request_queue.mutex);
+            } else if (schedalg == SCHED_DT) {
+                pthread_mutex_unlock(&request_queue.mutex);
+                Close(connfd);
+                continue;
 
-        } else if (schedalg == SCHED_RANDOM) {
-            pthread_mutex_lock(&request_queue.mutex);
-            if (request_queue.size == request_queue.capacity) {
+            } else if (schedalg == SCHED_DH) {
+                // Drop the oldest request
+                struct timeval ignored_time;
+                dequeue(&request_queue, &ignored_time);
+
+            } else if (schedalg == SCHED_RD) {
+                // Drop 50% of the requests randomly
                 int drop_count = request_queue.size / 2;
                 for (int i = 0; i < drop_count; i++) {
                     int index = rand() % request_queue.size;
@@ -153,9 +143,9 @@ int main(int argc, char *argv[]) {
                     request_queue.size--;
                 }
             }
-            enqueue(&request_queue, connfd, arrival_time);
-            pthread_mutex_unlock(&request_queue.mutex);
         }
+        enqueue(&request_queue, connfd, arrival_time);
+        pthread_mutex_unlock(&request_queue.mutex);
     }
 }
 
