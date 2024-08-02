@@ -1,14 +1,6 @@
 #include "segel.h"
 #include "request.h"
 #include "request_queue.h"
-//#include <math.h>
-
-//
-// server.c: Multi-threaded web server
-//
-// To run:
-//  ./server <port> <threads> <queue_size> <schedalg>
-//
 
 typedef enum {
     SCHED_BLOCK,
@@ -17,6 +9,7 @@ typedef enum {
     SCHED_BF,
     SCHED_RD
 } schedalg_t;
+
 
 schedalg_t parse_schedalg(char *schedalg) {
     if (strcmp(schedalg, "block") == 0) return SCHED_BLOCK;
@@ -39,22 +32,44 @@ void getargs(int *port, int *threads, int *queue_size, char **schedalg, int argc
     *schedalg = argv[4];
 }
 
-request_queue_t request_queue;
+pthread_cond_t queue_not_full;
+pthread_cond_t queue_not_empty;
+pthread_cond_t queue_empty;
+pthread_mutex_t queue_mutex;
 
-int active_threads = 0;
+request_queue_t incoming_queue;
+request_queue_t processing_queue;
+
+int total_capacity;
+
+// Function to write a message to a log file
+void write_log(const char *message) {
+    FILE *log_file = fopen("server.log", "a");
+    if (log_file == NULL) {
+        perror("Failed to open log file");
+        return;
+    }
+
+    time_t now = time(NULL);
+    char *time_str = ctime(&now);
+    time_str[strlen(time_str) - 1] = '\0'; // Remove newline character
+
+    fprintf(log_file, "[%s] %s\n", time_str, message);
+    fclose(log_file);
+}
 
 void *worker_thread(void *arg) {
     thread_stats_t *t_stats = (thread_stats_t *)arg;
     while (1) {
         struct timeval arrival_time, dispatch_time, current_time;
 
-        pthread_mutex_lock(&request_queue.mutex);
-        while (request_queue.size == 0) {
-            pthread_cond_wait(&request_queue.not_empty, &request_queue.mutex);
+        pthread_mutex_lock(&queue_mutex);
+        while (incoming_queue.size == 0) {
+            pthread_cond_wait(&queue_not_empty, &queue_mutex);
         }
-        int connfd = dequeue(&request_queue, &arrival_time);
-        active_threads++;
-        pthread_mutex_unlock(&request_queue.mutex);
+        int connfd = dequeue(&incoming_queue, &arrival_time);
+        enqueue(&processing_queue, connfd, arrival_time);
+        pthread_mutex_unlock(&queue_mutex);
 
         // Calculate dispatch interval
         gettimeofday(&current_time, NULL);
@@ -64,37 +79,19 @@ void *worker_thread(void *arg) {
         t_stats->total_req++;
 
         requestHandle(connfd, arrival_time, dispatch_time, t_stats);
-        Close(connfd);
 
-        pthread_mutex_lock(&request_queue.mutex);
-        active_threads--;
-        if (request_queue.size == 0 && active_threads == 0) {
-            pthread_cond_signal(&request_queue.empty);
+        pthread_cond_signal(&queue_not_full); // Signal that the queue is not full
+
+        pthread_mutex_lock(&queue_mutex);
+        remove_by_connfd(&processing_queue, connfd);
+        if (incoming_queue.size == 0 && processing_queue.size == 0) {
+            pthread_cond_signal(&queue_empty);
         }
-        pthread_mutex_unlock(&request_queue.mutex);
+        pthread_mutex_unlock(&queue_mutex);
     }
     return NULL;
 }
 
-//void log_queue_size(int size) {
-//    FILE *log_file = fopen("server_log.txt", "a");
-//    if (log_file != NULL) {
-//        fprintf(log_file, "Queue size: %d\n", size);
-//        fclose(log_file);
-//    } else {
-//        perror("Failed to open log file");
-//    }
-//}
-//
-//void log_drop() {
-//    FILE *log_file = fopen("server_log.txt", "a");
-//    if (log_file != NULL) {
-//        fprintf(log_file, "Closing request\n");
-//        fclose(log_file);
-//    } else {
-//        perror("Failed to open log file");
-//    }
-//}
 
 
 int main(int argc, char *argv[]) {
@@ -106,7 +103,16 @@ int main(int argc, char *argv[]) {
     getargs(&port, &threads, &queue_size, &schedalg_str, argc, argv);
     schedalg = parse_schedalg(schedalg_str);
 
-    init(&request_queue, queue_size);
+    total_capacity = queue_size;
+
+    init(&incoming_queue);
+    init(&processing_queue);
+
+    pthread_mutex_init(&queue_mutex, NULL);
+    pthread_cond_init(&queue_not_full, NULL);
+    pthread_cond_init(&queue_not_empty, NULL);
+    pthread_cond_init(&queue_empty, NULL);
+
 
     pthread_t *thread_pool = malloc(threads * sizeof(pthread_t));
     thread_stats_t *thread_stats = malloc(threads * sizeof(thread_stats_t));
@@ -121,63 +127,57 @@ int main(int argc, char *argv[]) {
     listenfd = Open_listenfd(port);
     srand(time(NULL)); // Initialize random seed for drop_random
 
-
     while (1) {
         struct timeval arrival_time;
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *) &clientaddr, (socklen_t *) &clientlen);
 
-
         gettimeofday(&arrival_time, NULL);
 
-//        log_queue_size(request_queue.size); // Log the queue size
-
-        pthread_mutex_lock(&request_queue.mutex);
-        if (request_queue.size == request_queue.capacity) {
+        pthread_mutex_lock(&queue_mutex);
+        if (incoming_queue.size + processing_queue.size >= total_capacity) {
             if (schedalg == SCHED_BF) {
-                while (request_queue.size > 0) {
-                    pthread_cond_wait(&request_queue.empty, &request_queue.mutex);
+                while (incoming_queue.size > 0 || processing_queue.size > 0) {
+                    pthread_cond_wait(&queue_empty, &queue_mutex);
                 }
-                pthread_mutex_unlock(&request_queue.mutex);
+                pthread_mutex_unlock(&queue_mutex);
                 Close(connfd);
                 continue;
             } else if (schedalg == SCHED_BLOCK) {
-                while (request_queue.size == request_queue.capacity) {
-                    pthread_cond_wait(&request_queue.not_full, &request_queue.mutex);
+                while (incoming_queue.size + processing_queue.size >= total_capacity) {
+                    pthread_cond_wait(&queue_not_full, &queue_mutex);
                 }
-
             } else if (schedalg == SCHED_DT) {
-                pthread_mutex_unlock(&request_queue.mutex);
-//                log_drop();
+                pthread_mutex_unlock(&queue_mutex);
                 Close(connfd);
                 continue;
-
             } else if (schedalg == SCHED_DH) {
-                // Drop the oldest request
-                struct timeval ignored_time;
-                dequeue(&request_queue, &ignored_time);
-
+                if (incoming_queue.size > 0) {
+                    struct timeval ignored_time;
+                    int ignored_fd = dequeue(&incoming_queue, &ignored_time);
+                    Close(ignored_fd);
+                } else {
+                    pthread_mutex_unlock(&queue_mutex);
+                    Close(connfd);
+                    continue;
+                }
             } else if (schedalg == SCHED_RD) {
-                // Drop 50% of the requests randomly, rounding up
-                int drop_count = (request_queue.size + 1) / 2;
-                for (int i = 0; i < drop_count; i++) {
-                    int index = rand() % request_queue.size;
-                    for (int j = index; j < request_queue.size - 1; j++) {
-                        request_queue.buffer[j] = request_queue.buffer[j + 1];
-                        request_queue.arrival_times[j] = request_queue.arrival_times[j + 1];
+                if (incoming_queue.size > 0) {
+                    int drop_count = (incoming_queue.size + 1) / 2;
+                    for (int i = 0; i < drop_count; i++) {
+                        int index = rand() % incoming_queue.size;
+                        int ignored_fd = remove_node_at_index(&incoming_queue, index);
+                        Close(ignored_fd);
                     }
-                    request_queue.size--;
+                } else {
+                    pthread_mutex_unlock(&queue_mutex);
+                    Close(connfd);
+                    continue;
                 }
             }
-
-
         }
-        enqueue(&request_queue, connfd, arrival_time);
-        pthread_mutex_unlock(&request_queue.mutex);
+        enqueue(&incoming_queue, connfd, arrival_time);
+        pthread_cond_signal(&queue_not_empty);
+        pthread_mutex_unlock(&queue_mutex);
     }
 }
-
-
-
-
-

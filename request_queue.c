@@ -4,41 +4,114 @@
 
 #include "request_queue.h"
 #include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
 
-void init(request_queue_t *queue, int capacity) {
-    queue->buffer = (int *)malloc(capacity * sizeof(int));
-    queue->arrival_times = (struct timeval *)malloc(capacity * sizeof(struct timeval));
-    queue->capacity = capacity;
+// Define the queue structure
+//struct request_queue_t {
+//    node_t *front;
+//    node_t *rear;
+//    int size;
+//};
+
+// Initialize the queue
+void init(request_queue_t *queue) {
+    queue->front = NULL;
+    queue->rear = NULL;
     queue->size = 0;
-    queue->front = 0;
-    queue->rear = -1;
-    pthread_mutex_init(&queue->mutex, NULL);
-    pthread_cond_init(&queue->not_full, NULL);
-    pthread_cond_init(&queue->not_empty, NULL);
-    pthread_cond_init(&queue->empty, NULL);
 }
 
+// Enqueue operation
 void enqueue(request_queue_t *queue, int connfd, struct timeval arrival_time) {
-    queue->rear = (queue->rear + 1) % queue->capacity;
-    queue->buffer[queue->rear] = connfd;
-    queue->arrival_times[queue->rear] = arrival_time;
-    queue->size++;
-    pthread_cond_signal(&queue->not_empty);
+    node_t *new_node = (node_t *)malloc(sizeof(node_t));
+    new_node->connfd = connfd;
+    new_node->arrival_time = arrival_time;
+    new_node->next = NULL;
 
+    if (queue->rear == NULL) {
+        queue->front = new_node;
+        queue->rear = new_node;
+    } else {
+        queue->rear->next = new_node;
+        queue->rear = new_node;
+    }
+    queue->size++;
 }
 
+// Dequeue operation
 int dequeue(request_queue_t *queue, struct timeval *arrival_time) {
-    int request = queue->buffer[queue->front];
-    *arrival_time = queue->arrival_times[queue->front];
-    queue->front = (queue->front + 1) % queue->capacity;
+    if (queue->front == NULL) {
+        return -1; // Queue is empty
+    }
+
+    node_t *temp = queue->front;
+    int connfd = temp->connfd;
+    *arrival_time = temp->arrival_time;
+    queue->front = queue->front->next;
+
+    if (queue->front == NULL) {
+        queue->rear = NULL;
+    }
+
+    free(temp);
+    queue->size--;
+    return connfd;
+}
+
+int remove_node_at_index(request_queue_t *queue, int index) {
+    if (index < 0 || index >= queue->size) {
+        return -1; // Index out of bounds
+    }
+
+    node_t *current = queue->front;
+    node_t *previous = NULL;
+
+    for (int i = 0; i < index; i++) {
+        previous = current;
+        current = current->next;
+    }
+
+    if (previous == NULL) {
+        // Removing the front node
+        queue->front = current->next;
+    } else {
+        previous->next = current->next;
+    }
+
+    if (current == queue->rear) {
+        // Removing the rear node
+        queue->rear = previous;
+    }
+
+    int connfd = current->connfd;
+    free(current);
     queue->size--;
 
-    pthread_cond_signal(&queue->not_full);
-
-    return request;
+    return connfd;
 }
 
+int remove_by_connfd(request_queue_t *queue, int connfd) {
+    node_t *current = queue->front;
+    node_t *previous = NULL;
 
+    while (current != NULL) {
+        if (current->connfd == connfd) {
+            if (previous == NULL) {
+                // Removing the front node
+                queue->front = current->next;
+            } else {
+                previous->next = current->next;
+            }
 
+            if (current == queue->rear) {
+                // Removing the rear node
+                queue->rear = previous;
+            }
+
+            free(current);
+            queue->size--;
+            return 0; // Success
+        }
+        previous = current;
+        current = current->next;
+    }
+    return -1; // connfd not found
+}

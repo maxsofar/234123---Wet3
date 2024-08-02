@@ -5,23 +5,27 @@
 #ifndef REQUEST_QUEUE_H
 #define REQUEST_QUEUE_H
 
-#include <pthread.h>
+#include <sys/time.h>
 
+// Define the node structure
+typedef struct node {
+    int connfd;
+    struct timeval arrival_time;
+    struct node *next;
+} node_t;
+
+// Define the queue structure
 typedef struct {
-    int *buffer;
-    struct timeval *arrival_times;
-    int capacity;
+    node_t *front;
+    node_t *rear;
     int size;
-    int front;
-    int rear;
-    pthread_mutex_t mutex;
-    pthread_cond_t not_full;
-    pthread_cond_t not_empty;
-    pthread_cond_t empty;
 } request_queue_t;
 
-void init(request_queue_t *queue, int capacity);
+// Function declarations
+void init(request_queue_t *queue);
 void enqueue(request_queue_t *queue, int connfd, struct timeval arrival_time);
 int dequeue(request_queue_t *queue, struct timeval *arrival_time);
+int remove_node_at_index(request_queue_t *queue, int index);
+int remove_by_connfd(request_queue_t *queue, int connfd);
 
 #endif // REQUEST_QUEUE_H

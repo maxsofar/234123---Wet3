@@ -6,7 +6,13 @@
 #include "request.h"
 #include "request_queue.h"
 
-extern request_queue_t request_queue;
+extern pthread_mutex_t queue_mutex;
+extern pthread_cond_t queue_not_full;
+extern pthread_cond_t queue_not_empty;
+extern pthread_cond_t queue_empty;
+extern request_queue_t incoming_queue;
+extern int total_capacity;
+
 
 // requestError(      fd,    filename,        "404",    "Not found", "OS-HW3 Server could not find this file");
 void requestError(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg, struct timeval arrival, struct timeval dispatch, thread_stats_t *t_stats)
@@ -202,6 +208,8 @@ void requestServeStatic(int fd, char *filename, int filesize, struct timeval arr
     Munmap(srcp, filesize);
 }
 // handle a request
+// request.c
+
 void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thread_stats_t *t_stats) {
     int is_static;
     struct stat sbuf;
@@ -217,6 +225,7 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
 
     if (strcasecmp(method, "GET")) {
         requestError(fd, method, "501", "Not Implemented", "OS-HW3 Server does not implement this method", arrival, dispatch, t_stats);
+        Close(fd);
         return;
     }
     requestReadhdrs(&rio);
@@ -224,11 +233,13 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
     is_static = requestParseURI(uri, filename, cgiargs);
     if (stat(filename, &sbuf) < 0) {
         requestError(fd, filename, "404", "Not found", "OS-HW3 Server could not find this file", arrival, dispatch, t_stats);
+        Close(fd);
         return;
     }
     if (is_static) {
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) {
             requestError(fd, filename, "403", "Forbidden", "OS-HW3 Server could not read this file", arrival, dispatch, t_stats);
+            Close(fd);
             return;
         }
         increaseStaticReq(t_stats);
@@ -236,6 +247,7 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
     } else {
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {
             requestError(fd, filename, "403", "Forbidden", "OS-HW3 Server could not run this CGI program", arrival, dispatch, t_stats);
+            Close(fd);
             return;
         }
         increaseDynamicReq(t_stats);
@@ -245,18 +257,18 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
     // Check for .skip suffix
     if (strstr(filename, ".skip") != NULL) {
         struct timeval skip_arrival_time;
-        int skip_fd;
+        int skip_fd = -1;
 
-        pthread_mutex_lock(&request_queue.mutex);
-        if (request_queue.size > 0) {
-            skip_fd = request_queue.buffer[request_queue.rear];
-            skip_arrival_time = request_queue.arrival_times[request_queue.rear];
-            request_queue.rear = (request_queue.rear - 1 + request_queue.capacity) % request_queue.capacity;
-            request_queue.size--;
-        } else {
-            skip_fd = -1;
+        pthread_mutex_lock(&queue_mutex);
+        if (incoming_queue.size > 0) {
+            // Remove the last node in the queue
+            skip_fd = remove_node_at_index(&incoming_queue, incoming_queue.size - 1);
+            if (skip_fd != -1) {
+                node_t *last_node = incoming_queue.rear;
+                skip_arrival_time = last_node->arrival_time;
+            }
         }
-        pthread_mutex_unlock(&request_queue.mutex);
+        pthread_mutex_unlock(&queue_mutex);
 
         if (skip_fd != -1) {
             struct timeval skip_dispatch_time, current_time;
@@ -267,4 +279,6 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
             Close(skip_fd);
         }
     }
+
+    Close(fd);
 }
