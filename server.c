@@ -1,6 +1,7 @@
 #include "segel.h"
 #include "request.h"
 #include "request_queue.h"
+//#include <math.h>
 
 //
 // server.c: Multi-threaded web server
@@ -75,6 +76,27 @@ void *worker_thread(void *arg) {
     return NULL;
 }
 
+//void log_queue_size(int size) {
+//    FILE *log_file = fopen("server_log.txt", "a");
+//    if (log_file != NULL) {
+//        fprintf(log_file, "Queue size: %d\n", size);
+//        fclose(log_file);
+//    } else {
+//        perror("Failed to open log file");
+//    }
+//}
+//
+//void log_drop() {
+//    FILE *log_file = fopen("server_log.txt", "a");
+//    if (log_file != NULL) {
+//        fprintf(log_file, "Closing request\n");
+//        fclose(log_file);
+//    } else {
+//        perror("Failed to open log file");
+//    }
+//}
+
+
 int main(int argc, char *argv[]) {
     int listenfd, connfd, port, clientlen, threads, queue_size;
     struct sockaddr_in clientaddr;
@@ -105,7 +127,10 @@ int main(int argc, char *argv[]) {
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *) &clientaddr, (socklen_t *) &clientlen);
 
+
         gettimeofday(&arrival_time, NULL);
+
+//        log_queue_size(request_queue.size); // Log the queue size
 
         pthread_mutex_lock(&request_queue.mutex);
         if (request_queue.size == request_queue.capacity) {
@@ -123,6 +148,7 @@ int main(int argc, char *argv[]) {
 
             } else if (schedalg == SCHED_DT) {
                 pthread_mutex_unlock(&request_queue.mutex);
+//                log_drop();
                 Close(connfd);
                 continue;
 
@@ -132,8 +158,8 @@ int main(int argc, char *argv[]) {
                 dequeue(&request_queue, &ignored_time);
 
             } else if (schedalg == SCHED_RD) {
-                // Drop 50% of the requests randomly
-                int drop_count = request_queue.size / 2;
+                // Drop 50% of the requests randomly, rounding up
+                int drop_count = (request_queue.size + 1) / 2;
                 for (int i = 0; i < drop_count; i++) {
                     int index = rand() % request_queue.size;
                     for (int j = index; j < request_queue.size - 1; j++) {
@@ -143,6 +169,8 @@ int main(int argc, char *argv[]) {
                     request_queue.size--;
                 }
             }
+
+
         }
         enqueue(&request_queue, connfd, arrival_time);
         pthread_mutex_unlock(&request_queue.mutex);
