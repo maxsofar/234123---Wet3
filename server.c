@@ -161,7 +161,7 @@ int main(int argc, char *argv[]) {
                     Close(connfd);
                     continue;
                 }
-            } else if (schedalg == SCHED_RD) {
+            } else {
                 if (incoming_queue.size > 0) {
                     int drop_count = (incoming_queue.size + 1) / 2;
                     for (int i = 0; i < drop_count; i++) {
