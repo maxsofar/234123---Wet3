@@ -230,7 +230,56 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
     }
     requestReadhdrs(&rio);
 
+    // Check for .skip suffix in the URI
+    char *skip_suffix = strstr(uri, ".skip");
+    if (skip_suffix && strcmp(skip_suffix, ".skip") == 0) {
+        *skip_suffix = '\0'; // Remove the .skip suffix
+
+        // Dequeue the last request in the queue
+        struct timeval last_arrival;
+        int last_fd = dequeue_last(&incoming_queue, &last_arrival);
+
+        // Parse the URI after removing the .skip suffix
+        is_static = requestParseURI(uri, filename, cgiargs);
+
+        // Handle the current request (with .skip suffix removed)
+        if (stat(filename, &sbuf) < 0) {
+            requestError(fd, filename, "404", "Not found", "OS-HW3 Server could not find this file", arrival, dispatch, t_stats);
+            Close(fd);
+            return;
+        }
+        if (is_static) {
+            if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) {
+                requestError(fd, filename, "403", "Forbidden", "OS-HW3 Server could not read this file", arrival, dispatch, t_stats);
+                Close(fd);
+                return;
+            }
+            increaseStaticReq(t_stats);
+            requestServeStatic(fd, filename, sbuf.st_size, arrival, dispatch, t_stats);
+        } else {
+            if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {
+                requestError(fd, filename, "403", "Forbidden", "OS-HW3 Server could not run this CGI program", arrival, dispatch, t_stats);
+                Close(fd);
+                return;
+            }
+            increaseDynamicReq(t_stats);
+            requestServeDynamic(fd, filename, cgiargs, arrival, dispatch, t_stats);
+        }
+        Close(fd);
+
+        // Handle the dequeued last request
+        if (last_fd != -1) {
+            struct timeval last_dispatch;
+            gettimeofday(&last_dispatch, NULL);
+            requestHandle(last_fd, last_arrival, last_dispatch, t_stats);
+        }
+        return;
+    }
+
+    // Parse the URI as usual
     is_static = requestParseURI(uri, filename, cgiargs);
+
+    // Handle the request as usual
     if (stat(filename, &sbuf) < 0) {
         requestError(fd, filename, "404", "Not found", "OS-HW3 Server could not find this file", arrival, dispatch, t_stats);
         Close(fd);
@@ -252,32 +301,6 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
         }
         increaseDynamicReq(t_stats);
         requestServeDynamic(fd, filename, cgiargs, arrival, dispatch, t_stats);
-    }
-
-    // Check for .skip suffix
-    if (strstr(filename, ".skip") != NULL) {
-        struct timeval skip_arrival_time;
-        int skip_fd = -1;
-
-        pthread_mutex_lock(&queue_mutex);
-        if (incoming_queue.size > 0) {
-            // Remove the last node in the queue
-            skip_fd = remove_node_at_index(&incoming_queue, incoming_queue.size - 1);
-            if (skip_fd != -1) {
-                node_t *last_node = incoming_queue.rear;
-                skip_arrival_time = last_node->arrival_time;
-            }
-        }
-        pthread_mutex_unlock(&queue_mutex);
-
-        if (skip_fd != -1) {
-            struct timeval skip_dispatch_time, current_time;
-            gettimeofday(&current_time, NULL);
-            timersub(&current_time, &skip_arrival_time, &skip_dispatch_time);
-
-            requestHandle(skip_fd, skip_arrival_time, skip_dispatch_time, t_stats);
-            Close(skip_fd);
-        }
     }
 
     Close(fd);

@@ -115,3 +115,35 @@ int remove_by_connfd(request_queue_t *queue, int connfd) {
     }
     return -1; // connfd not found
 }
+
+int dequeue_last(request_queue_t *queue, struct timeval *arrival_time) {
+    if (queue->front == NULL) {
+        return -1; // Queue is empty
+    }
+
+    if (queue->front == queue->rear) {
+        // Only one element in the queue
+        int connfd = queue->front->connfd;
+        *arrival_time = queue->front->arrival_time;
+        free(queue->front);
+        queue->front = NULL;
+        queue->rear = NULL;
+        queue->size--;
+        return connfd;
+    }
+
+    // More than one element in the queue
+    node_t *current = queue->front;
+    while (current->next != queue->rear) {
+        current = current->next;
+    }
+
+    int connfd = queue->rear->connfd;
+    *arrival_time = queue->rear->arrival_time;
+    free(queue->rear);
+    queue->rear = current;
+    queue->rear->next = NULL;
+    queue->size--;
+
+    return connfd;
+}

@@ -27,5 +27,6 @@ void enqueue(request_queue_t *queue, int connfd, struct timeval arrival_time);
 int dequeue(request_queue_t *queue, struct timeval *arrival_time);
 int remove_node_at_index(request_queue_t *queue, int index);
 int remove_by_connfd(request_queue_t *queue, int connfd);
+int dequeue_last(request_queue_t *queue, struct timeval *arrival_time);
 
 #endif // REQUEST_QUEUE_H

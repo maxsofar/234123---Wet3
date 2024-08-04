@@ -50,11 +50,7 @@ void write_log(const char *message) {
         return;
     }
 
-    time_t now = time(NULL);
-    char *time_str = ctime(&now);
-    time_str[strlen(time_str) - 1] = '\0'; // Remove newline character
-
-    fprintf(log_file, "[%s] %s\n", time_str, message);
+    fprintf(log_file, "%s\n", message);
     fclose(log_file);
 }
 
